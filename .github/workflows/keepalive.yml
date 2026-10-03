@@ -2,12 +2,9 @@ name: Appwrite Keepalive
 
 on:
   schedule:
-    # Runs every 5 days at midnight UTC
-    # Appwrite pauses projects after 7 days of inactivity
-    # 5 days gives us a safe buffer
+    # 每 5 天的 UTC 00:00 (台灣時間 08:00) 自動跑一次
     - cron: "0 0 */5 * *"
-
-  # Allow manual trigger for testing
+  # 支援手動觸發測試
   workflow_dispatch:
 
 jobs:
@@ -16,21 +13,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Run keepalive
-        run: bun run keepalive
+      - name: Ping Appwrite Service
         env:
           APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
           APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
-          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
-          APPWRITE_PROJECTS: ${{ secrets.APPWRITE_PROJECTS }}
+        run: |
+          # 檢查 Secrets
+          if [ -z "$APPWRITE_ENDPOINT" ] || [ -z "$APPWRITE_PROJECT_ID" ]; then
+            echo "::error::缺少 GitHub Secrets (APPWRITE_ENDPOINT 或 APPWRITE_PROJECT_ID)！"
+            exit 1
+          fi
+
+          CLEAN_ENDPOINT="${APPWRITE_ENDPOINT%/}"
+          echo "目標網址: $CLEAN_ENDPOINT/locale"
+
+          # 送出請求
+          HTTP_STATUS=$(curl -s -o response.txt -w "%{http_code}" \
+            -X GET "$CLEAN_ENDPOINT/locale" \
+            -H "X-Appwrite-Project: $APPWRITE_PROJECT_ID")
+
+          echo "HTTP 狀態碼: $HTTP_STATUS"
+          echo "伺服器回應: $(cat response.txt)"
+
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ 成功喚醒 Appwrite 專案！"
+          else
+            echo "::error::請求失敗，狀態碼為 $HTTP_STATUS"
+            exit 1
+          fi
